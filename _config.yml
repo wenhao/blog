@@ -7,6 +7,10 @@ title: Hexo
 subtitle:
 description:
 author: 文浩
+author_title: '开发'
+avatar: css/images/avatar.png
+location: 'SiChuan, China'
+follow: https://github.com/wenhao/
 language: zh-CN
 timezone: Asia/Chongqing
 
@@ -64,6 +68,12 @@ pagination_dir: page
 ## Plugins: http://hexo.io/plugins/
 ## Themes: http://hexo.io/themes/
 theme: icarus
+
+# Disqus
+# disqus_shortname: hexo-theme-icarus
+
+# DuoShuo
+# duoshuo_shortname: hexo-theme-icarus
 
 # Deployment
 ## Docs: http://hexo.io/docs/deployment.html
