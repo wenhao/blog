@@ -13,7 +13,7 @@ location: 'SiChuan, China'
 follow: https://github.com/wenhao/
 language: zh-CN
 timezone: Asia/Chongqing
-emial: wenhao@126.com
+email: wenhao@126.com
 
 # URL
 ## If your site is put in a subdirectory, set url as 'http://yoursite.com/child' and root as '/child/'
@@ -82,3 +82,11 @@ deploy:
   type: git
   repo: git@github.com:wenhao/wenhao.github.io.git
   branch: master
+
+feed:
+  type: atom
+  path: atom.xml
+  limit: 20
+
+baidusitemap:
+    path: baidusitemap.xml
