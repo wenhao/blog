@@ -57,7 +57,7 @@ tag_map:
 ## Hexo uses Moment.js to parse and display date
 ## You can customize the date format as defined in
 ## http://momentjs.com/docs/#/displaying/format/
-date_format: YYYY-MM-DD
+date_format: YYYY年MM月D日
 time_format: HH:mm:ss
 
 # Pagination
@@ -74,7 +74,7 @@ theme: icarus
 # disqus_shortname: hexo-theme-icarus
 
 # DuoShuo
-# duoshuo_shortname: hexo-theme-icarus
+duoshuo_shortname: wenhao
 
 # Deployment
 ## Docs: http://hexo.io/docs/deployment.html
@@ -87,6 +87,9 @@ feed:
   type: atom
   path: atom.xml
   limit: 20
+
+sitemap:
+    path: sitemap.xml
 
 baidusitemap:
     path: baidusitemap.xml
