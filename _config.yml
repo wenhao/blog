@@ -4,8 +4,8 @@
 
 # Site
 title: 源代码
-subtitle:
-description:
+subtitle: 敏捷, 持续交付, 微服务, 重构, 大数据, Java
+description: 关注企业软件设计的方法及最佳实践，诸如敏捷、持续交付、重构、大数据及微服务等。
 author: 文浩
 author_title: '技术经理'
 avatar: css/images/avatar.png
@@ -80,7 +80,8 @@ duoshuo_shortname: cdwenhao
 ## Docs: http://hexo.io/docs/deployment.html
 deploy:
   type: git
-  repo: git@github.com:wenhao/wenhao.github.io.git
+#  repo: git@github.com:wenhao/wenhao.github.io.git
+  repo: https://github.com/wenhao/wenhao.github.io.git
   branch: master
 
 feed:
