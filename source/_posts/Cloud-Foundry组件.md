@@ -18,6 +18,8 @@ Cloud Foundry组件包括一个自我服务的应用程序运行引擎，一个�
 
 [路由](http://docs.cloudfoundry.org/concepts/architecture/router.html)分发请求到下一个适当的组件，通常是Cloud Controller或者是运行在DEA节点上的应用程序。
 
+<!-- more -->
+
 ###认证
 
 OAuth2([UAA](http://docs.cloudfoundry.org/concepts/architecture/uaa.html))和登陆服务器共同管理认证服务。
