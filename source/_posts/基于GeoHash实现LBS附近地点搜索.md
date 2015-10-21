@@ -1,4 +1,4 @@
-title: 基于GeoHash实现LBS附近地点搜索
+title: 基于GeoHash+Redis实现LBS附近地点搜索
 toc: true
 date: 2015-10-21 15:55:27
 categories:
