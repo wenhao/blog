@@ -23,11 +23,11 @@ tags:
 
 ###方案解析
 
-####物理计算
+#####物理计算
 
 在我们第一次遇到这类问题，头脑里面最先浮现的解决方案，但是我们的潜意思告诉我们这肯定是不行的。如果搜索的受众量很大，光是计算距离就要消耗大量的时间。
 
-####基于MySQL
+#####基于MySQL
 
 存入MySQL实现上有三种方式：
 
@@ -45,7 +45,7 @@ tags:
           longitude > longitude - precisionRadius && 
           longitude < longitude + precisionRadius;
     ```
-2. 给每一个坐标计算一个[GeoHash](https://en.wikipedia.org/wiki/Geohash)值，业界大部分的使用的是基于Base32编码的12为GeoHash字符串。但是这样精度不太容易控制。我们将要讨论的是52位的整形值来表示GeoHash。52位的GeoHash最小能精确到0.6米，足够满足绝大部分需求(52位GeoHash算法见下文)。
+2. 给每一个坐标计算一个[GeoHash](https://en.wikipedia.org/wiki/Geohash)值，业界大部分的使用的是基于Base32编码的12位GeoHash字符串。但是这样精度不太容易控制。我们将要讨论的是52位的整形值来表示GeoHash。52位的GeoHash最小能精确到0.6米，足够满足绝大部分需求(52位GeoHash算法见下文)。
     
 3. MySQL空间存储，MySQL本省就支持空间搜索。
     
@@ -53,11 +53,22 @@ tags:
     GLength(LineStringFromWKB(LineString(point1, point2)))
     ```
     
-但是由于MySQL的限制，性能还是不够高。
+但是由于MySQL的限制，查询效率低，可伸缩性较差。
     
     
-####基于MongoDB
-    
+#####基于MongoDB
+
+MonggoDB原生也支持地理位置索引，支持位置查询及排序。
+
+命令如:
+
+```
+db.runCommand({ geoNear: "places", near: [30.545162, 104.062018], num:1000 })
+```
+
+MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集成方便快，成本最低。3.0版本之后增加了Collection锁，性能大大提升。业界也有不少公司在使用，比如美团、街旁、全球最大的LBS应用[Foursquare](https://foursquare.com/)用的MongoDB。
+
+#####自行开发搜索算法并存入Redis
 
 ### 具体实现
 
