@@ -14,13 +14,50 @@ tags:
 
 随着移动业务的不断创新，基于位置服务的需求逐渐增多。比如美团搜索附近的美食，嘀嘀打车搜搜附近的司机等。支撑这一业务最主要的就是LBS(基于位置的服务)，特别是嘀嘀打车的业务尤为突出，司机与乘客不断更新的坐标地址，从一大堆无关的坐标地址内找出一定范围内所有的司机，这无疑对服务器承载力带来巨大的挑战。
 
-### 解决方案
+###解决方案
 
 1. 物理计算，正对某个中心点，计算所有周边点，再根据搜索范围刷选。
-2. 存于MySQL，根据纬度和精度每增加0.01度增加1000m为算法，检索出候选坐标，再根据搜索范围刷选。
-3. 存入MongoDB，依赖MongoDB的空间搜索算法搜索。
+2. 基于MySQL，可选择物理计算/GeoHash/MySQL空间索引。
+3. 基于MongoDB，依赖MongoDB的空间搜索算法搜索。
 4. 自行开发搜索算法并存入Redis。
 
+###方案解析
+
+####物理计算
+
+在我们第一次遇到这类问题，头脑里面最先浮现的解决方案，但是我们的潜意思告诉我们这肯定是不行的。如果搜索的受众量很大，光是计算距离就要消耗大量的时间。
+
+####基于MySQL
+
+存入MySQL实现上有三种方式：
+
+1. 根据纬度和精度每增加0.01度增加1000m为算法，检索出候选坐标，再根据搜索范围刷选。距离搜索3公里以内所有目标，伪代码：
+
+    ```java
+    double kilometer = 3.0;
+    
+    double precision = 0.01 * kilometer;
+    
+    //SQL 限定条件 
+    SELECT * FROM driver_coordinate
+    WHERE latitude > latitude - precision && 
+          latitude < latitude + precision &&
+          longitude > longitude - precisionRadius && 
+          longitude < longitude + precisionRadius;
+    ```
+2. 给每一个坐标计算一个[GeoHash](https://en.wikipedia.org/wiki/Geohash)值，业界大部分的使用的是基于Base32编码的12为GeoHash字符串。但是这样精度不太容易控制。我们将要讨论的是52位的整形值来表示GeoHash。52位的GeoHash最小能精确到0.6米，足够满足绝大部分需求(52位GeoHash算法见下文)。
+    
+3. MySQL空间存储，MySQL本省就支持空间搜索。
+    
+    ```
+    GLength(LineStringFromWKB(LineString(point1, point2)))
+    ```
+    
+但是由于MySQL的限制，性能还是不够高。
+    
+    
+####基于MongoDB
+    
 
 ### 具体实现
 
