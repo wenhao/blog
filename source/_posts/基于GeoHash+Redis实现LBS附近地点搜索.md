@@ -99,36 +99,37 @@ import com.github.wenhao.geohash.domain.Coordinate;
 
 public class GeoHash {
 
-    private static final int MAX_PRECISION = 52;
+    public static final int MAX_PRECISION = 52;
     private static final long FIRST_BIT_FLAGGED = 0x8000000000000L;
     private long bits = 0;
     private byte significantBits = 0;
     private Coordinate coordinate;
 
-    public GeoHash() {
+    private GeoHash() {
     }
 
-    public GeoHash(double latitude, double longitude) {
-        this(latitude, longitude, MAX_PRECISION);
+    public static GeoHash fromCoordinate(double latitude, double longitude) {
+        return fromCoordinate(latitude, longitude, MAX_PRECISION);
     }
 
-    public GeoHash(double latitude, double longitude, int precision) {
-        this.coordinate = new Coordinate(latitude, longitude);
+    public static GeoHash fromCoordinate(double latitude, double longitude, int precision) {
+        GeoHash geoHash = new GeoHash();
+        geoHash.coordinate = new Coordinate(latitude, longitude);
         boolean isEvenBit = true;
         double[] latitudeRange = {-90, 90};
         double[] longitudeRange = {-180, 180};
 
-        while (significantBits < precision) {
+        while (geoHash.significantBits < precision) {
             if (isEvenBit) {
-                divideRangeEncode(longitude, longitudeRange);
+                divideRangeEncode(geoHash, longitude, longitudeRange);
             } else {
-                divideRangeEncode(latitude, latitudeRange);
+                divideRangeEncode(geoHash, latitude, latitudeRange);
             }
             isEvenBit = !isEvenBit;
         }
-        bits <<= (MAX_PRECISION - precision);
+        geoHash.bits <<= (MAX_PRECISION - precision);
+        return geoHash;
     }
-
 
     public static GeoHash fromLong(long longValue) {
         return fromLong(longValue, MAX_PRECISION);
@@ -275,13 +276,13 @@ public class GeoHash {
         return value & mask;
     }
 
-    private void divideRangeEncode(double value, double[] range) {
+    private static void divideRangeEncode(GeoHash geoHash, double value, double[] range) {
         double mid = (range[0] + range[1]) / 2;
         if (value >= mid) {
-            addOnBitToEnd();
+            geoHash.addOnBitToEnd();
             range[0] = mid;
         } else {
-            addOffBitToEnd();
+            geoHash.addOffBitToEnd();
             range[1] = mid;
         }
     }
@@ -332,18 +333,87 @@ public class GeoHash {
     
 2. 估算搜索范围起始值。
 
-    * 12bit精度为：9775.7m， 11bit精度为：19551.5m ……
     * 算法, 如果用52位来表示一个坐标, 那么总共有: 2^26 * 2^26 = 2^52 个框:
+    
         * 地球半径：radius = 6372797.560856m
         * 每个框的夹角：angle = 1 / 2^26 (2的26次方)
         * 每个框在地球表面的长度: length = 2 * π * radius * angle
+        * 52bit:0.59m, 50bit:1.19m......,30bit:1221.97m, 28bit:2443.94m, 26bit:4887.87m, 24bit: 9775.75m......
 
 3. 给出查询的中心坐标并计算其GeoHash值(52bit)。
 
 4. 计算中心坐标相邻的8个坐标(中心坐标在两个框边界会有误差，此规避误差)。
 
 5. 加上中心坐标共9个52bit的坐标值，针对每个坐标值参照搜索范围值算出区域值[MIN, MAX]。
-    * 算法：MIN为坐标的搜索指定位起始长度后补零；MAX为坐标的搜索指定位终止长度后补壹。
+    * 算法：MIN为坐标的搜索指定位起始长度后补零；MAX为坐标的搜索指定位终止长度后+1再补零。
+
+```java
+package com.github.wenhao.geohash;
+
+import static java.math.BigDecimal.ROUND_HALF_UP;
+
+import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+
+import static com.github.wenhao.geohash.GeoHash.MAX_PRECISION;
+
+public class GeoSearch {
+    private static final BigDecimal EARTH_RADIUS = new BigDecimal(6372797.560856);
+    private static Map<BigDecimal, Integer> PRECISION_MAP;
+
+    static {
+        PRECISION_MAP = new HashMap<>();
+        for (int angle = 1; angle <= MAX_PRECISION / 2; angle++) {
+            BigDecimal bigDecimal = new BigDecimal(2)
+                    .multiply(new BigDecimal(Math.PI))
+                    .multiply(EARTH_RADIUS)
+                    .divide(new BigDecimal(2).pow(angle), ROUND_HALF_UP);
+            PRECISION_MAP.put(bigDecimal, 2 * angle);
+        }
+    }
+
+    public static long[] search(double latitude, double longitude, double startRage, double endRange) {
+        GeoHash geoHash = GeoHash.fromCoordinate(latitude, longitude);
+        long longValue = geoHash.toLong();
+        return new long[]{getStartRange(longValue, startRage), getEndRange(longValue, endRange)};
+    }
+
+    private static long getStartRange(long longValue, double startRage) {
+        int length = MAX_PRECISION;
+        Optional<BigDecimal> smallerKey = PRECISION_MAP.keySet()
+                .stream()
+                .sorted(Collections.reverseOrder())
+                .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(startRage)) == -1)
+                .findFirst();
+        if (smallerKey.isPresent()) {
+            length = PRECISION_MAP.get(smallerKey.get());
+        }
+        long desiredMinPrecision = longValue >>> (MAX_PRECISION - length);
+        desiredMinPrecision <<= (MAX_PRECISION - length);
+        return desiredMinPrecision;
+    }
+
+    private static long getEndRange(long longValue, double endRange) {
+        int length = 0;
+        Optional<BigDecimal> biggerKey = PRECISION_MAP.keySet()
+                .stream()
+                .sorted()
+                .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(endRange)) == 1)
+                .findFirst();
+        if (biggerKey.isPresent()) {
+            length = PRECISION_MAP.get(biggerKey.get());
+        }
+        long desiredMaxPrecision = (longValue >>> (MAX_PRECISION - length)) + 1;
+        desiredMaxPrecision <<= (MAX_PRECISION - length);
+        return desiredMaxPrecision;
+    }
+}
+
+```
+例如搜索3000m~5000m的目标，最小3000m介于精度28bit：2443.94m~26bit：4887.87m之间故最小精度取右28bit右全补零。最大5000m介于26bit：4887.87m~24bit：9775.75m之间取右24bit的值加1后右全补零。
 
 6. 使用Redis命令ZRANGEBYSCORE key MIN MAX WITHSCORES查找。
 
