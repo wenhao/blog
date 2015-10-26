@@ -159,6 +159,19 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
             geoHash.bits <<= (MAX_PRECISION - geoHash.significantBits);
             return geoHash;
         }
+        
+        public double distance(double latitude, double longitude) {
+            double startLatitude = this.coordinate.getLatitude();
+            double startLongitude = this.coordinate.getLongitude();
+            double diffLongitudes = toRadians(abs(longitude - startLongitude));
+            double diffLatitudes = toRadians(abs(latitude - startLatitude));
+            double slat = toRadians(startLatitude);
+            double flat = toRadians(latitude);
+            double factor = sin(diffLatitudes / 2) * sin(diffLatitudes / 2) + cos(slat) * cos(flat) * sin(diffLongitudes / 2)
+                    * sin(diffLongitudes / 2);
+            double angularDistance = 2 * atan2(sqrt(factor), sqrt(1 - factor));
+            return EARTH_RADIUS * angularDistance;
+        }
 
         public List<GeoHash> getAdjacent() {
             GeoHash northern = getNorthernNeighbour();
