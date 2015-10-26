@@ -86,250 +86,247 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
         * 首先将纬度范围(-90, 90)平分成两个区间(-90, 0)、(0, 90)， 如果目标纬度位于前一个区间，则编码为0，否则编码为1。由于39.92324属于(0, 90)，所以取编码为1。然后再将(0, 90)分成 (0, 45), (45, 90)两个区间，而39.92324位于(0, 45)，所以编码为0。以此类推，直到精度符合要求为止，得到纬度编码为1011 1000 1100 0111 1001。
         * 经度也用同样的算法，对(-180, 180)依次细分，得到116.3906的编码为1101 0010 1100 0100 0100。
         * 接下来将经度和纬度的编码合并，奇数位是纬度，偶数位是经度，得到编码 11100 11101 00100 01111 00000 01101 01011 00001。   
-
-
-```java
-//https://github.com/wenhao/geohash
-package com.github.wenhao.geohash;
-
-import java.util.Arrays;
-import java.util.List;
-
-import com.github.wenhao.geohash.domain.Coordinate;
-
-public class GeoHash {
-
-    public static final int MAX_PRECISION = 52;
-    private static final long FIRST_BIT_FLAGGED = 0x8000000000000L;
-    private long bits = 0;
-    private byte significantBits = 0;
-    private Coordinate coordinate;
-
-    private GeoHash() {
-    }
-
-    public static GeoHash fromCoordinate(double latitude, double longitude) {
-        return fromCoordinate(latitude, longitude, MAX_PRECISION);
-    }
-
-    public static GeoHash fromCoordinate(double latitude, double longitude, int precision) {
-        GeoHash geoHash = new GeoHash();
-        geoHash.coordinate = new Coordinate(latitude, longitude);
-        boolean isEvenBit = true;
-        double[] latitudeRange = {-90, 90};
-        double[] longitudeRange = {-180, 180};
-
-        while (geoHash.significantBits < precision) {
-            if (isEvenBit) {
-                divideRangeEncode(geoHash, longitude, longitudeRange);
-            } else {
-                divideRangeEncode(geoHash, latitude, latitudeRange);
-            }
-            isEvenBit = !isEvenBit;
-        }
-        geoHash.bits <<= (MAX_PRECISION - precision);
-        return geoHash;
-    }
-
-    public static GeoHash fromLong(long longValue) {
-        return fromLong(longValue, MAX_PRECISION);
-    }
-
-    public static GeoHash fromLong(long longValue, int significantBits) {
-        double[] latitudeRange = {-90.0, 90.0};
-        double[] longitudeRange = {-180.0, 180.0};
-
-        boolean isEvenBit = true;
-        GeoHash geoHash = new GeoHash();
-
-        String binaryString = Long.toBinaryString(longValue);
-        while (binaryString.length() < MAX_PRECISION) {
-            binaryString = "0" + binaryString;
-        }
-        for (int j = 0; j < significantBits; j++) {
-            if (isEvenBit) {
-                divideRangeDecode(geoHash, longitudeRange, binaryString.charAt(j) != '0');
-            } else {
-                divideRangeDecode(geoHash, latitudeRange, binaryString.charAt(j) != '0');
-            }
-            isEvenBit = !isEvenBit;
-        }
-
-        double latitude = (latitudeRange[0] + latitudeRange[1]) / 2;
-        double longitude = (longitudeRange[0] + longitudeRange[1]) / 2;
-
-        geoHash.coordinate = new Coordinate(latitude, longitude);
-        geoHash.bits <<= (MAX_PRECISION - geoHash.significantBits);
-        return geoHash;
-    }
-
-    public List<GeoHash> getAdjacent() {
-        GeoHash northern = getNorthernNeighbour();
-        GeoHash eastern = getEasternNeighbour();
-        GeoHash southern = getSouthernNeighbour();
-        GeoHash western = getWesternNeighbour();
-        return Arrays.asList(northern, northern.getEasternNeighbour(), eastern, southern.getEasternNeighbour(),
-                southern, southern.getWesternNeighbour(), western, northern.getWesternNeighbour());
-    }
-
-    private GeoHash getNorthernNeighbour() {
-        long[] latitudeBits = getRightAlignedLatitudeBits();
-        long[] longitudeBits = getRightAlignedLongitudeBits();
-        latitudeBits[0] += 1;
-        latitudeBits[0] = maskLastNBits(latitudeBits[0], latitudeBits[1]);
-        return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
-    }
-
-    private GeoHash getSouthernNeighbour() {
-        long[] latitudeBits = getRightAlignedLatitudeBits();
-        long[] longitudeBits = getRightAlignedLongitudeBits();
-        latitudeBits[0] -= 1;
-        latitudeBits[0] = maskLastNBits(latitudeBits[0], latitudeBits[1]);
-        return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
-    }
-
-    private GeoHash getEasternNeighbour() {
-        long[] latitudeBits = getRightAlignedLatitudeBits();
-        long[] longitudeBits = getRightAlignedLongitudeBits();
-        longitudeBits[0] += 1;
-        longitudeBits[0] = maskLastNBits(longitudeBits[0], longitudeBits[1]);
-        return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
-    }
-
-    private GeoHash getWesternNeighbour() {
-        long[] latitudeBits = getRightAlignedLatitudeBits();
-        long[] longitudeBits = getRightAlignedLongitudeBits();
-        longitudeBits[0] -= 1;
-        longitudeBits[0] = maskLastNBits(longitudeBits[0], longitudeBits[1]);
-        return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
-    }
-
-    private GeoHash recombineLatLonBitsToHash(long[] latBits, long[] lonBits) {
-        GeoHash geoHash = new GeoHash();
-        boolean isEvenBit = false;
-        latBits[0] <<= (MAX_PRECISION - latBits[1]);
-        lonBits[0] <<= (MAX_PRECISION - lonBits[1]);
-        double[] latitudeRange = {-90.0, 90.0};
-        double[] longitudeRange = {-180.0, 180.0};
-
-        for (int i = 0; i < latBits[1] + lonBits[1]; i++) {
-            if (isEvenBit) {
-                divideRangeDecode(geoHash, latitudeRange, (latBits[0] & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED);
-                latBits[0] <<= 1;
-            } else {
-                divideRangeDecode(geoHash, longitudeRange, (lonBits[0] & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED);
-                lonBits[0] <<= 1;
-            }
-            isEvenBit = !isEvenBit;
-        }
-        geoHash.bits <<= (MAX_PRECISION - geoHash.significantBits);
-        geoHash.coordinate = getCenterCoordinate(latitudeRange, longitudeRange);
-        return geoHash;
-    }
-
-    private long[] getRightAlignedLatitudeBits() {
-        long copyOfBits = bits << 1;
-        long value = extractEverySecondBit(copyOfBits, getNumberOfLatLonBits()[0]);
-        return new long[]{value, getNumberOfLatLonBits()[0]};
-    }
-
-    private long[] getRightAlignedLongitudeBits() {
-        long copyOfBits = bits;
-        long value = extractEverySecondBit(copyOfBits, getNumberOfLatLonBits()[1]);
-        return new long[]{value, getNumberOfLatLonBits()[1]};
-    }
-
-    private long extractEverySecondBit(long copyOfBits, int numberOfBits) {
-        long value = 0;
-        for (int i = 0; i < numberOfBits; i++) {
-            if ((copyOfBits & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED) {
-                value |= 0x1;
-            }
-            value <<= 1;
-            copyOfBits <<= 2;
-        }
-        value >>>= 1;
-        return value;
-    }
-
-    private Coordinate getCenterCoordinate(double[] latitudeRange, double[] longitudeRange) {
-        double minLon = Math.min(longitudeRange[0], longitudeRange[1]);
-        double maxLon = Math.max(longitudeRange[0], longitudeRange[1]);
-        double minLat = Math.min(latitudeRange[0], latitudeRange[1]);
-        double maxLat = Math.max(latitudeRange[0], latitudeRange[1]);
-        double centerLatitude = (minLat + maxLat) / 2;
-        double centerLongitude = (minLon + maxLon) / 2;
-        return new Coordinate(centerLatitude, centerLongitude);
-    }
-
-    private int[] getNumberOfLatLonBits() {
-        if (significantBits % 2 == 0) {
-            return new int[]{significantBits / 2, significantBits / 2};
-        } else {
-            return new int[]{significantBits / 2, significantBits / 2 + 1};
-        }
-    }
-
-    private long maskLastNBits(long value, long n) {
-        long mask = 0xffffffffffffffffl;
-        mask >>>= (MAX_PRECISION - n);
-        return value & mask;
-    }
-
-    private static void divideRangeEncode(GeoHash geoHash, double value, double[] range) {
-        double mid = (range[0] + range[1]) / 2;
-        if (value >= mid) {
-            geoHash.addOnBitToEnd();
-            range[0] = mid;
-        } else {
-            geoHash.addOffBitToEnd();
-            range[1] = mid;
-        }
-    }
-
-    private static void divideRangeDecode(GeoHash geoHash, double[] range, boolean b) {
-        double mid = (range[0] + range[1]) / 2;
-        if (b) {
-            geoHash.addOnBitToEnd();
-            range[0] = mid;
-        } else {
-            geoHash.addOffBitToEnd();
-            range[1] = mid;
-        }
-    }
-
-    private void addOnBitToEnd() {
-        significantBits++;
-        bits <<= 1;
-        bits = bits | 0x1;
-    }
-
-    private void addOffBitToEnd() {
-        significantBits++;
-        bits <<= 1;
-    }
-
-    public long toLong() {
-        return bits;
-    }
-
-    public Coordinate coordinate() {
-        return coordinate;
-    }
-
-    @Override
-    public String toString() {
-        if (significantBits % 5 == 0) {
-            return String.format("bits: %s", Long.toBinaryString(bits));
-        } else {
-            return String.format("bits: %s", Long.toBinaryString(bits));
-        }
-    }
-}
-        
-``` 
     
-支持坐标转换成GeoHash与Long型值反转回坐标，转换会有误差，误差分米级能够接受。
+    ```java
+    package com.github.wenhao.geohash;
+    import java.util.Arrays;
+    import java.util.List;
+
+    import com.github.wenhao.geohash.domain.Coordinate;
+    
+    public class GeoHash {
+
+        public static final int MAX_PRECISION = 52;
+        private static final long FIRST_BIT_FLAGGED = 0x8000000000000L;
+        private long bits = 0;
+        private byte significantBits = 0;
+        private Coordinate coordinate;
+
+        private GeoHash() {
+        }
+
+        public static GeoHash fromCoordinate(double latitude, double longitude) {
+            return fromCoordinate(latitude, longitude, MAX_PRECISION);
+        }
+
+        public static GeoHash fromCoordinate(double latitude, double longitude, int precision) {
+            GeoHash geoHash = new GeoHash();
+            geoHash.coordinate = new Coordinate(latitude, longitude);
+            boolean isEvenBit = true;
+            double[] latitudeRange = {-90, 90};
+            double[] longitudeRange = {-180, 180};
+
+            while (geoHash.significantBits < precision) {
+                if (isEvenBit) {
+                    divideRangeEncode(geoHash, longitude, longitudeRange);
+                } else {
+                    divideRangeEncode(geoHash, latitude, latitudeRange);
+                }
+                isEvenBit = !isEvenBit;
+            }
+            geoHash.bits <<= (MAX_PRECISION - precision);
+            return geoHash;
+        }
+
+        public static GeoHash fromLong(long longValue) {
+            return fromLong(longValue, MAX_PRECISION);
+        }
+
+        public static GeoHash fromLong(long longValue, int significantBits) {
+            double[] latitudeRange = {-90.0, 90.0};
+            double[] longitudeRange = {-180.0, 180.0};
+
+            boolean isEvenBit = true;
+            GeoHash geoHash = new GeoHash();
+
+            String binaryString = Long.toBinaryString(longValue);
+            while (binaryString.length() < MAX_PRECISION) {
+                binaryString = "0" + binaryString;
+            }
+            for (int j = 0; j < significantBits; j++) {
+                if (isEvenBit) {
+                    divideRangeDecode(geoHash, longitudeRange, binaryString.charAt(j) != '0');
+                } else {
+                    divideRangeDecode(geoHash, latitudeRange, binaryString.charAt(j) != '0');
+                }
+                isEvenBit = !isEvenBit;
+            }
+
+            double latitude = (latitudeRange[0] + latitudeRange[1]) / 2;
+            double longitude = (longitudeRange[0] + longitudeRange[1]) / 2;
+
+            geoHash.coordinate = new Coordinate(latitude, longitude);
+            geoHash.bits <<= (MAX_PRECISION - geoHash.significantBits);
+            return geoHash;
+        }
+
+        public List<GeoHash> getAdjacent() {
+            GeoHash northern = getNorthernNeighbour();
+            GeoHash eastern = getEasternNeighbour();
+            GeoHash southern = getSouthernNeighbour();
+            GeoHash western = getWesternNeighbour();
+            return Arrays.asList(northern, northern.getEasternNeighbour(), eastern, southern.getEasternNeighbour(),
+                    southern, southern.getWesternNeighbour(), western, northern.getWesternNeighbour());
+        }
+
+        private GeoHash getNorthernNeighbour() {
+            long[] latitudeBits = getRightAlignedLatitudeBits();
+            long[] longitudeBits = getRightAlignedLongitudeBits();
+            latitudeBits[0] += 1;
+            latitudeBits[0] = maskLastNBits(latitudeBits[0], latitudeBits[1]);
+            return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
+        }
+
+        private GeoHash getSouthernNeighbour() {
+            long[] latitudeBits = getRightAlignedLatitudeBits();
+            long[] longitudeBits = getRightAlignedLongitudeBits();
+            latitudeBits[0] -= 1;
+            latitudeBits[0] = maskLastNBits(latitudeBits[0], latitudeBits[1]);
+            return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
+        }
+
+        private GeoHash getEasternNeighbour() {
+            long[] latitudeBits = getRightAlignedLatitudeBits();
+            long[] longitudeBits = getRightAlignedLongitudeBits();
+            longitudeBits[0] += 1;
+            longitudeBits[0] = maskLastNBits(longitudeBits[0], longitudeBits[1]);
+            return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
+        }
+
+        private GeoHash getWesternNeighbour() {
+            long[] latitudeBits = getRightAlignedLatitudeBits();
+            long[] longitudeBits = getRightAlignedLongitudeBits();
+            longitudeBits[0] -= 1;
+            longitudeBits[0] = maskLastNBits(longitudeBits[0], longitudeBits[1]);
+            return recombineLatLonBitsToHash(latitudeBits, longitudeBits);
+        }
+
+        private GeoHash recombineLatLonBitsToHash(long[] latBits, long[] lonBits) {
+            GeoHash geoHash = new GeoHash();
+            boolean isEvenBit = false;
+            latBits[0] <<= (MAX_PRECISION - latBits[1]);
+            lonBits[0] <<= (MAX_PRECISION - lonBits[1]);
+            double[] latitudeRange = {-90.0, 90.0};
+            double[] longitudeRange = {-180.0, 180.0};
+
+            for (int i = 0; i < latBits[1] + lonBits[1]; i++) {
+                if (isEvenBit) {
+                    divideRangeDecode(geoHash, latitudeRange, (latBits[0] & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED);
+                    latBits[0] <<= 1;
+                } else {
+                    divideRangeDecode(geoHash, longitudeRange, (lonBits[0] & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED);
+                    lonBits[0] <<= 1;
+                }
+                isEvenBit = !isEvenBit;
+            }
+            geoHash.bits <<= (MAX_PRECISION - geoHash.significantBits);
+            geoHash.coordinate = getCenterCoordinate(latitudeRange, longitudeRange);
+            return geoHash;
+        }
+
+        private long[] getRightAlignedLatitudeBits() {
+            long copyOfBits = bits << 1;
+            long value = extractEverySecondBit(copyOfBits, getNumberOfLatLonBits()[0]);
+            return new long[]{value, getNumberOfLatLonBits()[0]};
+        }
+
+        private long[] getRightAlignedLongitudeBits() {
+            long copyOfBits = bits;
+            long value = extractEverySecondBit(copyOfBits, getNumberOfLatLonBits()[1]);
+            return new long[]{value, getNumberOfLatLonBits()[1]};
+        }
+
+        private long extractEverySecondBit(long copyOfBits, int numberOfBits) {
+            long value = 0;
+            for (int i = 0; i < numberOfBits; i++) {
+                if ((copyOfBits & FIRST_BIT_FLAGGED) == FIRST_BIT_FLAGGED) {
+                    value |= 0x1;
+                }
+                value <<= 1;
+                copyOfBits <<= 2;
+            }
+            value >>>= 1;
+            return value;
+        }
+
+        private Coordinate getCenterCoordinate(double[] latitudeRange, double[] longitudeRange) {
+            double minLon = Math.min(longitudeRange[0], longitudeRange[1]);
+            double maxLon = Math.max(longitudeRange[0], longitudeRange[1]);
+            double minLat = Math.min(latitudeRange[0], latitudeRange[1]);
+            double maxLat = Math.max(latitudeRange[0], latitudeRange[1]);
+            double centerLatitude = (minLat + maxLat) / 2;
+            double centerLongitude = (minLon + maxLon) / 2;
+            return new Coordinate(centerLatitude, centerLongitude);
+        }
+
+        private int[] getNumberOfLatLonBits() {
+            if (significantBits % 2 == 0) {
+                return new int[]{significantBits / 2, significantBits / 2};
+            } else {
+                return new int[]{significantBits / 2, significantBits / 2 + 1};
+            }
+        }
+
+        private long maskLastNBits(long value, long n) {
+            long mask = 0xffffffffffffffffl;
+            mask >>>= (MAX_PRECISION - n);
+            return value & mask;
+        }
+
+        private static void divideRangeEncode(GeoHash geoHash, double value, double[] range) {
+            double mid = (range[0] + range[1]) / 2;
+            if (value >= mid) {
+                geoHash.addOnBitToEnd();
+                range[0] = mid;
+            } else {
+                geoHash.addOffBitToEnd();
+                range[1] = mid;
+            }
+        }
+
+        private static void divideRangeDecode(GeoHash geoHash, double[] range, boolean b) {
+            double mid = (range[0] + range[1]) / 2;
+            if (b) {
+                geoHash.addOnBitToEnd();
+                range[0] = mid;
+            } else {
+                geoHash.addOffBitToEnd();
+                range[1] = mid;
+            }
+        }
+
+        private void addOnBitToEnd() {
+            significantBits++;
+            bits <<= 1;
+            bits = bits | 0x1;
+        }
+
+        private void addOffBitToEnd() {
+            significantBits++;
+            bits <<= 1;
+        }
+
+        public long toLong() {
+            return bits;
+        }
+
+        public Coordinate coordinate() {
+            return coordinate;
+        }
+
+        @Override
+        public String toString() {
+            if (significantBits % 5 == 0) {
+                return String.format("bits: %s", Long.toBinaryString(bits));
+            } else {
+                return String.format("bits: %s", Long.toBinaryString(bits));
+            }
+        }
+    }
+
+    ```
+
+    支持坐标转换成GeoHash与Long型值反转回坐标，转换会有误差，误差分米级能够接受。
     
 2. 估算搜索范围起始值。
 
@@ -347,73 +344,72 @@ public class GeoHash {
 5. 加上中心坐标共9个52bit的坐标值，针对每个坐标值参照搜索范围值算出区域值[MIN, MAX]。
     * 算法：MIN为坐标的搜索指定位起始长度后补零；MAX为坐标的搜索指定位终止长度后+1再补零。
 
-```java
-package com.github.wenhao.geohash;
+    ```java
+    package com.github.wenhao.geohash;
 
-import static java.math.BigDecimal.ROUND_HALF_UP;
+    import static java.math.BigDecimal.ROUND_HALF_UP;
 
-import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+    import java.math.BigDecimal;
+    import java.util.Collections;
+    import java.util.HashMap;
+    import java.util.Map;
+    import java.util.Optional;
 
-import static com.github.wenhao.geohash.GeoHash.MAX_PRECISION;
+    import static com.github.wenhao.geohash.GeoHash.MAX_PRECISION;
 
-public class GeoSearch {
-    private static final BigDecimal EARTH_RADIUS = new BigDecimal(6372797.560856);
-    private static Map<BigDecimal, Integer> PRECISION_MAP;
+    public class GeoSearch {
+        private static final BigDecimal EARTH_RADIUS = new BigDecimal(6372797.560856);
+        private static Map<BigDecimal, Integer> PRECISION_MAP;
 
-    static {
-        PRECISION_MAP = new HashMap<>();
-        for (int angle = 1; angle <= MAX_PRECISION / 2; angle++) {
-            BigDecimal bigDecimal = new BigDecimal(2)
-                    .multiply(new BigDecimal(Math.PI))
-                    .multiply(EARTH_RADIUS)
-                    .divide(new BigDecimal(2).pow(angle), ROUND_HALF_UP);
-            PRECISION_MAP.put(bigDecimal, 2 * angle);
+        static {
+            PRECISION_MAP = new HashMap<>();
+            for (int angle = 1; angle <= MAX_PRECISION / 2; angle++) {
+                BigDecimal bigDecimal = new BigDecimal(2)
+                        .multiply(new BigDecimal(Math.PI))
+                        .multiply(EARTH_RADIUS)
+                        .divide(new BigDecimal(2).pow(angle), ROUND_HALF_UP);
+                PRECISION_MAP.put(bigDecimal, 2 * angle);
+            }
+        }
+
+        public static long[] search(double latitude, double longitude, double startRage, double endRange) {
+            GeoHash geoHash = GeoHash.fromCoordinate(latitude, longitude);
+            long longValue = geoHash.toLong();
+            return new long[]{getStartRange(longValue, startRage), getEndRange(longValue, endRange)};
+        }
+
+        private static long getStartRange(long longValue, double startRage) {
+            int length = MAX_PRECISION;
+            Optional<BigDecimal> smallerKey = PRECISION_MAP.keySet()
+                    .stream()
+                    .sorted(Collections.reverseOrder())
+                    .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(startRage)) == -1)
+                    .findFirst();
+            if (smallerKey.isPresent()) {
+                length = PRECISION_MAP.get(smallerKey.get());
+            }
+            long desiredMinPrecision = longValue >>> (MAX_PRECISION - length);
+            desiredMinPrecision <<= (MAX_PRECISION - length);
+            return desiredMinPrecision;
+        }
+
+        private static long getEndRange(long longValue, double endRange) {
+            int length = 0;
+            Optional<BigDecimal> biggerKey = PRECISION_MAP.keySet()
+                    .stream()
+                    .sorted()
+                    .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(endRange)) == 1)
+                    .findFirst();
+            if (biggerKey.isPresent()) {
+                length = PRECISION_MAP.get(biggerKey.get());
+            }
+            long desiredMaxPrecision = (longValue >>> (MAX_PRECISION - length)) + 1;
+            desiredMaxPrecision <<= (MAX_PRECISION - length);
+            return desiredMaxPrecision;
         }
     }
-
-    public static long[] search(double latitude, double longitude, double startRage, double endRange) {
-        GeoHash geoHash = GeoHash.fromCoordinate(latitude, longitude);
-        long longValue = geoHash.toLong();
-        return new long[]{getStartRange(longValue, startRage), getEndRange(longValue, endRange)};
-    }
-
-    private static long getStartRange(long longValue, double startRage) {
-        int length = MAX_PRECISION;
-        Optional<BigDecimal> smallerKey = PRECISION_MAP.keySet()
-                .stream()
-                .sorted(Collections.reverseOrder())
-                .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(startRage)) == -1)
-                .findFirst();
-        if (smallerKey.isPresent()) {
-            length = PRECISION_MAP.get(smallerKey.get());
-        }
-        long desiredMinPrecision = longValue >>> (MAX_PRECISION - length);
-        desiredMinPrecision <<= (MAX_PRECISION - length);
-        return desiredMinPrecision;
-    }
-
-    private static long getEndRange(long longValue, double endRange) {
-        int length = 0;
-        Optional<BigDecimal> biggerKey = PRECISION_MAP.keySet()
-                .stream()
-                .sorted()
-                .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(endRange)) == 1)
-                .findFirst();
-        if (biggerKey.isPresent()) {
-            length = PRECISION_MAP.get(biggerKey.get());
-        }
-        long desiredMaxPrecision = (longValue >>> (MAX_PRECISION - length)) + 1;
-        desiredMaxPrecision <<= (MAX_PRECISION - length);
-        return desiredMaxPrecision;
-    }
-}
-
-```
-例如搜索3000m~5000m的目标，最小3000m介于精度28bit：2443.94m~26bit：4887.87m之间故最小精度取右28bit右全补零。最大5000m介于26bit：4887.87m~24bit：9775.75m之间取右24bit的值加1后右全补零。
+    ```
+    例如搜索3000m~5000m的目标，最小3000m介于精度28bit：2443.94m~26bit：4887.87m之间故最小精度取右28bit右全补零。最大5000m介于26bit：4887.87m~24bit：9775.75m之间取右24bit的值加1后右全补零。
 
 6. 使用Redis命令ZRANGEBYSCORE key MIN MAX WITHSCORES查找。
 
