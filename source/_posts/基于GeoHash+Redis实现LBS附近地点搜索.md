@@ -89,6 +89,12 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
     
     ```java
     package com.github.wenhao.geohash;
+    import static java.lang.Math.abs;
+    import static java.lang.Math.atan2;
+    import static java.lang.Math.cos;
+    import static java.lang.Math.sin;
+    import static java.lang.Math.sqrt;
+    import static java.lang.Math.toRadians;
     import java.util.Arrays;
     import java.util.List;
 
@@ -179,7 +185,7 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
             GeoHash southern = getSouthernNeighbour();
             GeoHash western = getWesternNeighbour();
             return Arrays.asList(northern, northern.getEasternNeighbour(), eastern, southern.getEasternNeighbour(),
-                    southern, southern.getWesternNeighbour(), western, northern.getWesternNeighbour());
+                    southern, southern.getWesternNeighbour(), western, northern.getWesternNeighbour(), this);
         }
 
         private GeoHash getNorthernNeighbour() {
@@ -280,9 +286,9 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
             }
         }
 
-        private long maskLastNBits(long value, long n) {
-            long mask = 0xffffffffffffffffl;
-            mask >>>= (MAX_PRECISION - n);
+        private long maskLastNBits(long value, long number) {
+            long mask = 0xffffffffffffffffL;
+            mask >>>= (MAX_PRECISION - number);
             return value & mask;
         }
 
@@ -297,9 +303,9 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
             }
         }
 
-        private static void divideRangeDecode(GeoHash geoHash, double[] range, boolean b) {
+        private static void divideRangeDecode(GeoHash geoHash, double[] range, boolean isOnBit) {
             double mid = (range[0] + range[1]) / 2;
-            if (b) {
+            if (isOnBit) {
                 geoHash.addOnBitToEnd();
                 range[0] = mid;
             } else {
@@ -343,11 +349,15 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
     
 2. 估算搜索范围起始值。
 
+    52bit把地球总面积等分成2^26(2的26次方)个区域, 每个区域大小等于0.6mx0.6m的正方形面积. 同理如果采用30bit,就是把地球等分成2^15个区域, 每个区域大小等于1222mx1222m.
+    
+    ![精度估算](/img/earth_angle.png)
+
     * 算法, 如果用52位来表示一个坐标, 那么总共有: 2^26 * 2^26 = 2^52 个框:
     
         * 地球半径：radius = 6372797.560856m
         * 每个框的夹角：angle = 1 / 2^26 (2的26次方)
-        * 每个框在地球表面的长度: length = 2 * π * radius * angle
+        * 每个框在地球表面的长度: length = 2 x π x radius x angle
         * 52bit:0.59m, 50bit:1.19m......,30bit:1221.97m, 28bit:2443.94m, 26bit:4887.87m, 24bit: 9775.75m......
 
 3. 给出查询的中心坐标并计算其GeoHash值(52bit)。
@@ -355,20 +365,24 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
 4. 计算中心坐标相邻的8个坐标(中心坐标在两个框边界会有误差，此规避误差)。
 
 5. 加上中心坐标共9个52bit的坐标值，针对每个坐标值参照搜索范围值算出区域值[MIN, MAX]。
+
     * 算法：MIN为坐标的搜索指定位起始长度后补零；MAX为坐标的搜索指定位终止长度后+1再补零。
 
     ```java
     package com.github.wenhao.geohash;
 
     import static java.math.BigDecimal.ROUND_HALF_UP;
+    import static java.util.stream.Collectors.toList;
 
     import java.math.BigDecimal;
-    import java.util.Collections;
     import java.util.HashMap;
+    import java.util.List;
     import java.util.Map;
     import java.util.Optional;
 
     import static com.github.wenhao.geohash.GeoHash.MAX_PRECISION;
+
+    import com.github.wenhao.geohash.domain.GeoRange;
 
     public class GeoSearch {
         private static final BigDecimal EARTH_RADIUS = new BigDecimal(6372797.560856);
@@ -385,40 +399,35 @@ MongoDB支持地理位置查询，可伸缩性较好，配置集群简单，集�
             }
         }
 
-        public static long[] search(double latitude, double longitude, double startRage, double endRange) {
-            GeoHash geoHash = GeoHash.fromCoordinate(latitude, longitude);
-            long longValue = geoHash.toLong();
-            return new long[]{getStartRange(longValue, startRage), getEndRange(longValue, endRange)};
+        public static List<GeoRange> range(double latitude, double longitude, double range) {
+            int desiredLength = getDesiredLength(range);
+            return getNineAroundCoordinate(latitude, longitude, desiredLength).stream()
+                    .map(geoHash -> {
+                        long longValue = geoHash.toLong();
+                        long min = longValue << (MAX_PRECISION - desiredLength);
+                        long max = (longValue + 1) << (MAX_PRECISION - desiredLength);
+                        return new GeoRange(min, max);
+                    })
+                    .collect(toList());
         }
 
-        private static long getStartRange(long longValue, double startRage) {
-            int length = MAX_PRECISION;
-            Optional<BigDecimal> smallerKey = PRECISION_MAP.keySet()
-                    .stream()
-                    .sorted(Collections.reverseOrder())
-                    .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(startRage)) == -1)
-                    .findFirst();
-            if (smallerKey.isPresent()) {
-                length = PRECISION_MAP.get(smallerKey.get());
-            }
-            long desiredMinPrecision = longValue >>> (MAX_PRECISION - length);
-            desiredMinPrecision <<= (MAX_PRECISION - length);
-            return desiredMinPrecision;
+        private static List<GeoHash> getNineAroundCoordinate(double latitude, double longitude, int desiredLength) {
+            long longValue = GeoHash.fromCoordinate(latitude, longitude).toLong();
+            long centralPoint = longValue >>> (MAX_PRECISION - desiredLength);
+            return GeoHash.fromLong(centralPoint).getAdjacent();
         }
 
-        private static long getEndRange(long longValue, double endRange) {
-            int length = 0;
-            Optional<BigDecimal> biggerKey = PRECISION_MAP.keySet()
+        private static int getDesiredLength(double range) {
+            int desiredLength = 0;
+            Optional<BigDecimal> rangeKey = PRECISION_MAP.keySet()
                     .stream()
                     .sorted()
-                    .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(endRange)) == 1)
+                    .filter(bigDecimal -> bigDecimal.compareTo(BigDecimal.valueOf(range)) == 1)
                     .findFirst();
-            if (biggerKey.isPresent()) {
-                length = PRECISION_MAP.get(biggerKey.get());
+            if (rangeKey.isPresent()) {
+                desiredLength = PRECISION_MAP.get(rangeKey.get());
             }
-            long desiredMaxPrecision = (longValue >>> (MAX_PRECISION - length)) + 1;
-            desiredMaxPrecision <<= (MAX_PRECISION - length);
-            return desiredMaxPrecision;
+            return desiredLength;
         }
     }
     ```
