@@ -34,7 +34,7 @@ API版本控制多用在产品发布之后需要根据新需求对部分API做�
 
 ####服务端
 
-使用[Vendor MIME Media Type](http://tools.ietf.org/html/rfc4288#section-3.2), 版本升级采用数字递增不需要使用[Semantic Versioning](http://semver.org/)策略，向后兼容版本采用原有版本即可省去对客户端的修改，向前兼容的版本数字版本加1.
+使用[Vendor MIME Media Type](http://tools.ietf.org/html/rfc4288#section-3.2), 版本升级采用数字递增不需要使用[Semantic Versioning](http://semver.org/)策略，向后兼容版本采用原有版本即可，省去对客户端的修改，向前兼容的版本数字版本加1.
 
 ```
 Accept: application/vnd.name.v1+json
