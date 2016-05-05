@@ -420,14 +420,14 @@ openssl x509 -req -days 365 -in "/etc/nginx/ssl/artifactory.csr" -signkey "/etc/
 ```
 upstream artifactory {
     ip_hash;
-    server 120.27.142.73:8081;
-    server 120.27.148.141:8081;
+    server <IP>:<PORT>;
+    server <IP>:<PORT>;
 }
 
 server {
     listen 80;
     
-    server_name 121.199.66.97;
+    server_name <IP>;
     
     rewrite ^(.*) https://$server_name$1 permanent;
 }
@@ -435,7 +435,7 @@ server {
 server {
     listen 443 ssl;
 
-    server_name 121.199.66.97;
+    server_name <IP>;
 
     ssl on;
     ssl_certificate     /etc/nginx/ssl/artifactory.crt;
