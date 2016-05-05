@@ -133,7 +133,6 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
    GRANT ALL PRIVILEGES ON *.* TO 'artifactory'@'%' IDENTIFIED BY 'password' WITH GRANT OPTION;
    FLUSH PRIVILEGES;
    ```
-   
 2. [MySQL性能优化](https://www.jfrog.com/confluence/display/RTF/MySQL)。
 3. 允许MySQL远程访问。修改云主机上的/etc/mysql/my.cnf 文件，注释掉 bind_address=127.0.0.1就可以了。
    
@@ -305,7 +304,7 @@ server {
     index index.html index.htm;
 
     server_name localhost;
-	
+    
     if ($http_x_forwarded_proto = '') {
         set $http_x_forwarded_proto  $scheme;
     }
