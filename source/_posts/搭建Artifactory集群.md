@@ -133,6 +133,7 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
    GRANT ALL PRIVILEGES ON *.* TO 'artifactory'@'%' IDENTIFIED BY 'password' WITH GRANT OPTION;
    FLUSH PRIVILEGES;
    ```
+   
 2. [MySQL性能优化](https://www.jfrog.com/confluence/display/RTF/MySQL)。
 3. 允许MySQL远程访问。修改云主机上的/etc/mysql/my.cnf 文件，注释掉 bind_address=127.0.0.1就可以了。
    
@@ -193,7 +194,7 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
 1. 在/opt/jfrog/artifactory-pro-4.7.4/etc目录下创建`ha-node.properties`文件，内容如下：
 
    ```bash
-   node.id=art1
+   node.id=art2
    cluster.home=/artifactory/cluster-home
    context.url=http://<artifactory-slave's IP>:8081/artifactory
    membership.port=10001
@@ -297,42 +298,32 @@ upstream artifactory {
 }
 
 server {
-	listen 80 default_server;
-	listen [::]:80 default_server ipv6only=on;
+    listen 80 default_server;
+    listen [::]:80 default_server ipv6only=on;
 
-	root /usr/share/nginx/html;
-	index index.html index.htm;
+    root /usr/share/nginx/html;
+    index index.html index.htm;
 
-	# Make site accessible from http://localhost/
-	server_name localhost;
+    server_name localhost;
 	
-	if ($http_x_forwarded_proto = '') {
+    if ($http_x_forwarded_proto = '') {
         set $http_x_forwarded_proto  $scheme;
     }
     
     rewrite ^/$ /artifactory/webapp/ redirect;
     rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
 
-	location / {
-		# First attempt to serve request as file, then
-		# as directory, then fall back to displaying a 404.
-		try_files $uri $uri/ =404;
-		# Uncomment to enable naxsi on this location
-		# include /etc/nginx/naxsi.rules
-	}
-
-   location /artifactory {
-       proxy_read_timeout  900;
-       proxy_pass_header   Server;
-       proxy_cookie_path ~*^/.* /;
-       proxy_pass         http://artifactory/artifactory/;
-       proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
-       proxy_set_header    X-Forwarded-Port  $server_port;
-       proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
-       proxy_set_header    Host              $http_host;
-       proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
+    location /artifactory {
+        proxy_read_timeout  900;
+        proxy_pass_header   Server;
+        proxy_cookie_path ~*^/.* /;
+        proxy_pass         http://artifactory/artifactory/;
+        proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
+        proxy_set_header    X-Forwarded-Port  $server_port;
+        proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header    Host              $http_host;
+        proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
    }
-  
 }
 ```
 
