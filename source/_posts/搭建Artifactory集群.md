@@ -7,11 +7,11 @@ tags:
    - devops
 ---
 
+制品仓库系统有很多，例如[Artifactory](https://www.jfrog.com/)、[Archiva](http://archiva.apache.org/)、[Sonatype Nexus](http://www.sonatype.org/nexus)、[Eclipse Package Drone](https://eclipse.org/package-drone)，其中Artifactory拥有很多强大的企业级特性和人性化的用户接口，拥有众多客户群。很多大型的公司都在使用它，通过以下的Google趋势图可以看出，它越来越受青睐。功能对比在此：[Binary Repository Manager Feature Matrix](https://binary-repositories-comparison.github.io/)
 
+![Google趋势图](/img/binary-repository-trends.png)
 
-##搭建Artifactory集群
-
-在阿里云上搭建Artifactory集群。
+本文将尝试在阿里云上搭建Artifactory集群。
 
 ###Artifactory许可证
 
@@ -26,6 +26,10 @@ Artifactory集群需要以下硬件设备：
 3. 数据库(MySQL等)。
 
 <!-- more -->
+
+###搭建架构图
+
+![Artifactory集群](/img/artifactory-architecture.png)
 
 ###网络
 
@@ -82,7 +86,7 @@ artifactory会部署在artifactory-master和artifactory-slave上，需要安装�
 
    ```bash
    sh installService.sh
-   
+
    passwd artifactory <new password>
    ```
 
@@ -91,7 +95,7 @@ artifactory会部署在artifactory-master和artifactory-slave上，需要安装�
 NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-master和artifactory-salve上安装NFS客户端。
 
 1. 在artifactory-nfs服务器上安装nfs-kernel-server。
-   
+
    ```bash
    apt-get install nfs-kernel-server
    ```
@@ -117,7 +121,7 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
    ```bash
    chown -R artifactory:artifactory /artifactory/cluster-home
    ```   
-   
+
 ###安装MySQL
 
 在artifactory-nfs上安装MySQL。
@@ -126,7 +130,7 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
 
    ```bash
    apt-get install mysql-server mysql-client
-   
+
    mysql>
    CREATE DATABASE artdb CHARACTER SET utf8 COLLATE utf8_bin;
    CREATE USER artifactory IDENTIFIED BY 'password';
@@ -135,7 +139,7 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
    ```
 2. [MySQL性能优化](https://www.jfrog.com/confluence/display/RTF/MySQL)。
 3. 允许MySQL远程访问。修改云主机上的/etc/mysql/my.cnf 文件，注释掉 bind_address=127.0.0.1就可以了。
-   
+
 ###配置artifactory-master
 
 1. 在`/artifactory/cluster-home`下创建一下目录：
@@ -297,32 +301,42 @@ upstream artifactory {
 }
 
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server ipv6only=on;
+	listen 80 default_server;
+	listen [::]:80 default_server ipv6only=on;
 
-    root /usr/share/nginx/html;
-    index index.html index.htm;
+	root /usr/share/nginx/html;
+	index index.html index.htm;
 
-    server_name localhost;
-    
-    if ($http_x_forwarded_proto = '') {
+	# Make site accessible from http://localhost/
+	server_name localhost;
+
+	if ($http_x_forwarded_proto = '') {
         set $http_x_forwarded_proto  $scheme;
     }
-    
+
     rewrite ^/$ /artifactory/webapp/ redirect;
     rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
 
-    location /artifactory {
-        proxy_read_timeout  900;
-        proxy_pass_header   Server;
-        proxy_cookie_path ~*^/.* /;
-        proxy_pass         http://artifactory/artifactory/;
-        proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
-        proxy_set_header    X-Forwarded-Port  $server_port;
-        proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
-        proxy_set_header    Host              $http_host;
-        proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
+	location / {
+		# First attempt to serve request as file, then
+		# as directory, then fall back to displaying a 404.
+		try_files $uri $uri/ =404;
+		# Uncomment to enable naxsi on this location
+		# include /etc/nginx/naxsi.rules
+	}
+
+   location /artifactory {
+       proxy_read_timeout  900;
+       proxy_pass_header   Server;
+       proxy_cookie_path ~*^/.* /;
+       proxy_pass         http://artifactory/artifactory/;
+       proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
+       proxy_set_header    X-Forwarded-Port  $server_port;
+       proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
+       proxy_set_header    Host              $http_host;
+       proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
    }
+
 }
 ```
 
@@ -416,10 +430,27 @@ upstream artifactory {
 
 server {
     listen 80;
-    
+
     server_name <IP>;
-    
-    rewrite ^(.*) https://$server_name$1 permanent;
+
+    if ($http_x_forwarded_proto = '') {
+        set $http_x_forwarded_proto  $scheme;
+    }
+
+    rewrite ^/$ /artifactory/webapp/ redirect;
+    rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
+
+    location /artifactory/ {
+        proxy_read_timeout  900;
+        proxy_pass_header   Server;
+        proxy_cookie_path ~*^/.* /;
+        proxy_pass         http://artifactory/artifactory/;
+        proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
+        proxy_set_header    X-Forwarded-Port  $server_port;
+        proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header    Host              $http_host;
+        proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
+    }
 }
 
 server {
@@ -432,14 +463,14 @@ server {
     ssl_certificate_key /etc/nginx/ssl/artifactory.key;
     ssl_session_cache shared:SSL:1m;
     ssl_prefer_server_ciphers   on;
-    
+
     if ($http_x_forwarded_proto = '') {
         set $http_x_forwarded_proto  $scheme;
     }
-    
+
     rewrite ^/$ /artifactory/webapp/ redirect;
     rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
-    
+
     location /artifactory/ {
         proxy_read_timeout  900;
         proxy_pass_header   Server;
@@ -453,6 +484,10 @@ server {
     }
 }
 ```
+
+###Artifactory生态链
+
+![Artifactory生态链](/img/artifactory-eco-system.png)
 
 ###Artifactory集群性能优化
 
