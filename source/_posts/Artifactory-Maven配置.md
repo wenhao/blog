@@ -53,6 +53,10 @@ Artifactory支持对Snapshot仓库进行自动清理：
 
 ![maven virtual](/img/maven-virtual.png)
 
+在虚拟仓库高级设置里面有一个非常有用的功能，它适用的场景是：如有某个依赖也同时依赖其他外部仓库的包，那么在它的POM文件里面可能会定义一系列的`<repositories></repositories>`，如果在限制外网访问的工作环境下这样就会导致依赖包下载失败的情况。
+
+![maven virtual references](/img/maven-virtual-references.png)
+
 
 ###配置供developer访问的用户及权限
 
@@ -101,6 +105,8 @@ Artifactory支持对Snapshot仓库进行自动清理：
 ![artifactory global config](/img/artifactory-global-config.png)
 
 ####配置jenkins build job
+
+Artifactory不推荐使用`mven deploy`的方式上传Artifacts，因为对于一个多模块的Maven项目而言使用`mvn deploy`即便是构建失败还是会上传已经成功的模块。
 
 ![artifactory plugin config](/img/artifactory-plugin-config.png)
 
