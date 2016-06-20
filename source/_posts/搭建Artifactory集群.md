@@ -213,134 +213,73 @@ NFS配置需要在artifactory-nfs上安装NFS服务端，需要在artifactory-ma
    export CLASSPATH=.:$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar:$JRE_HOME/lib
    export PATH=$JAVA_HOME/bin:$PATH
    ```
+   
+###安装HAProxy负载均衡
 
-###安装Nginx负载均衡
+对于负载均衡HAProxy的性能会比Nginx好很多。
 
-Nginx也支持粘性会话如使用`ip_hash`等，但是最好的方案是借助第三份中间件例如Redis来存储session，使用[Nginx+Tomcat+Redis](https://github.com/jcoleman/tomcat-redis-session-manager)组合。在此我使用最简单的`ip_hash`方法。Nginx的default文件配置：
+#####安装HAProxy
 
+```bash
+apt-get install haproxy
 ```
-##nginx.conf
-user www-data;
+#####配置HAProxy
 
-worker_processes 8;
+```bash
+global
+	log /dev/log	local0
+	log /dev/log	local1 notice
+	chroot /var/lib/haproxy
+	user haproxy
+	group haproxy
+	daemon
+	maxconn 4096
+	nbproc 1
 
-error_log /var/log/nginx/error.log crit;
+defaults
+	log	global
+	mode	http
+	option	httplog
+	option	dontlognull
+	option  forwardfor header X-Forwarded-For
+	option  redispatch
+	retries 2
+	maxconn 40000
+	balance roundrobin
+	timeout connect 5000
+	timeout client 50000
+	timeout server 50000
+	errorfile 400 /etc/haproxy/errors/400.http
+	errorfile 403 /etc/haproxy/errors/403.http
+	errorfile 408 /etc/haproxy/errors/408.http
+	errorfile 500 /etc/haproxy/errors/500.http
+	errorfile 502 /etc/haproxy/errors/502.http
+	errorfile 503 /etc/haproxy/errors/503.http
+	errorfile 504 /etc/haproxy/errors/504.http
 
-pid /run/nginx.pid;
+frontend http-in
+	mode http
+	bind *:80
+	default_backend artifactory
 
-events
-{
-  use epoll;
-  worker_connections 8192;
-}
+backend artifactory
+	balance roundrobin
+	cookie SERVERID insert nocache indirect
+	option httpclose
+	option forwardfor header X-Forwarded-For
+	server artifactory1 <IP>:8081/artifactory weight 3 maxconn 10000 check
+	server artifactory2 <IP>:8081/artifactory weight 3 maxconn 10000 check
 
-http
-{
-  include /etc/nginx/mime.types;
-  default_type application/octet-stream;
-
-  charset utf-8;
-
-  server_names_hash_bucket_size 128;
-  client_header_buffer_size 32k;
-  large_client_header_buffers 4 32k;
-
-  keepalive_timeout 30;
-
-  sendfile on;
-  tcp_nopush on;
-  tcp_nodelay on;
-
-  # gzip压缩功能设置
-  gzip on;
-  gzip_min_length 1k;
-  gzip_buffers 4 16k;
-  gzip_http_version 1.1;
-  gzip_comp_level 2;
-  gzip_types text/plain application/json application/xml application/x-javascript text/css text/xml text/javascript;
-  gzip_vary on;
-
-  #允许客户端请求的最大的单个文件字节数
-  client_max_body_size 10m;
-
-  #缓冲区代理缓冲用户端请求的最大字节数
-  client_body_buffer_size 128k;
-
-  #跟后端服务器连接的超时时间_发起握手等候响应超时时间
-  proxy_connect_timeout 600;
-
-  #连接成功后_等候后端服务器响应时间_其实已经进入后端的排队之中等候处理
-  proxy_read_timeout 600;
-
-  #后端服务器数据回传时间_就是在规定时间之内后端服务器必须传完所有的数据
-  proxy_send_timeout 600;
-
-  #代理请求缓存区_这个缓存区间会保存用户的头信息以供Nginx经行规则处理_一般只要能保存下头信息即可
-  proxy_buffer_size 16k;
-
-  #Nginx保存单个用的几个Buffer及最大用多大空间
-  proxy_buffers 4 32k;
-
-  #如果系统很忙的时候可以申请最大的proxy_buffers
-  proxy_busy_buffers_size 64k;
-
-  #proxy缓存临时文件的大小
-  proxy_temp_file_write_size 64k;
-
-  include /etc/nginx/conf.d/*.conf;
-  include /etc/nginx/sites-enabled/*;
-}
+listen stats 
+	bind *:8080
+	stats enable
+	stats refresh 30s
+	stats uri /haproxy?stats
+	stats realm HAProxy\ Statistics
+	stats auth admin:admin
 ```
 
-```
-##default
-upstream artifactory {
-    ip_hash;
-    server <ip>:<port>;
-    server <ip>:<port>;
-}
-
-server {
-	listen 80 default_server;
-	listen [::]:80 default_server ipv6only=on;
-
-	root /usr/share/nginx/html;
-	index index.html index.htm;
-
-	# Make site accessible from http://localhost/
-	server_name localhost;
-
-	if ($http_x_forwarded_proto = '') {
-        set $http_x_forwarded_proto  $scheme;
-    }
-
-    rewrite ^/$ /artifactory/webapp/ redirect;
-    rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
-
-	location / {
-		# First attempt to serve request as file, then
-		# as directory, then fall back to displaying a 404.
-		try_files $uri $uri/ =404;
-		# Uncomment to enable naxsi on this location
-		# include /etc/nginx/naxsi.rules
-	}
-
-   location /artifactory {
-       proxy_read_timeout  900;
-       proxy_pass_header   Server;
-       proxy_cookie_path ~*^/.* /;
-       proxy_pass         http://artifactory/artifactory/;
-       proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
-       proxy_set_header    X-Forwarded-Port  $server_port;
-       proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
-       proxy_set_header    Host              $http_host;
-       proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
-   }
-
-}
-```
-
-###启动
+####启动
 
 ```bash
 su - artifactory
@@ -387,10 +326,6 @@ sudo apt-get update
 sudo apt-get install jenkins
 ```
 
-###安装Packer
-
-安装jenkins packer plugin
-
 ###安装docker
 
 ```bash
@@ -417,72 +352,66 @@ openssl genrsa -out "/etc/nginx/ssl/artifactory.key" 2048
 openssl req -new -key "/etc/nginx/ssl/artifactory.key" -out "/etc/nginx/ssl/artifactory.csr"
 
 openssl x509 -req -days 365 -in "/etc/nginx/ssl/artifactory.csr" -signkey "/etc/nginx/ssl/artifactory.key" -out "/etc/nginx/ssl/artifactory.crt"
+
+cat /etc/nginx/ssl/artifactory.crt /etc/nginx/ssl/artifactory.key > /etc/nginx/ssl/artifactory.pem
 ```
 
-####配置Nginx
+####配置HAProxy
 
 ```
-upstream artifactory {
-    ip_hash;
-    server <IP>:<PORT>;
-    server <IP>:<PORT>;
-}
+global
+	log /dev/log	local0
+	log /dev/log	local1 notice
+	chroot /var/lib/haproxy
+	user haproxy
+	group haproxy
+	daemon
+	maxconn 4096
+	nbproc 1
 
-server {
-    listen 80;
+defaults
+	log	global
+	mode	http
+	option	httplog
+	option	dontlognull
+	option  forwardfor header X-Forwarded-For
+	option  redispatch
+	retries 2
+	maxconn 40000
+	balance roundrobin
+	timeout connect 5000
+	timeout client 50000
+	timeout server 50000
+	errorfile 400 /etc/haproxy/errors/400.http
+	errorfile 403 /etc/haproxy/errors/403.http
+	errorfile 408 /etc/haproxy/errors/408.http
+	errorfile 500 /etc/haproxy/errors/500.http
+	errorfile 502 /etc/haproxy/errors/502.http
+	errorfile 503 /etc/haproxy/errors/503.http
+	errorfile 504 /etc/haproxy/errors/504.http
 
-    server_name <IP>;
+frontend http-in
+	mode http
+	bind *:80
+	bind *:443 ssl crt /etc/haproxy/ssl/artifactory.pem
+	reqirep ^/(v1|v2)/(.*) /artifactory/api/docker/\1/\2\3
+	default_backend artifactory
 
-    if ($http_x_forwarded_proto = '') {
-        set $http_x_forwarded_proto  $scheme;
-    }
+backend artifactory
+	balance roundrobin
+	cookie SERVERID insert nocache indirect
+	option httpclose
+	option forwardfor header X-Forwarded-For
+	server artifactory1 <IP>:8081/artifactory maxconn 10000 check cookie
+	server artifactory2 <IP>:8081/artifactory maxconn 10000 check cookie
 
-    rewrite ^/$ /artifactory/webapp/ redirect;
-    rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
-
-    location /artifactory/ {
-        proxy_read_timeout  900;
-        proxy_pass_header   Server;
-        proxy_cookie_path ~*^/.* /;
-        proxy_pass         http://artifactory/artifactory/;
-        proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
-        proxy_set_header    X-Forwarded-Port  $server_port;
-        proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
-        proxy_set_header    Host              $http_host;
-        proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
-    }
-}
-
-server {
-    listen 443 ssl;
-
-    server_name <IP>;
-
-    ssl on;
-    ssl_certificate     /etc/nginx/ssl/artifactory.crt;
-    ssl_certificate_key /etc/nginx/ssl/artifactory.key;
-    ssl_session_cache shared:SSL:1m;
-    ssl_prefer_server_ciphers   on;
-
-    if ($http_x_forwarded_proto = '') {
-        set $http_x_forwarded_proto  $scheme;
-    }
-
-    rewrite ^/$ /artifactory/webapp/ redirect;
-    rewrite ^/artifactory/?(/webapp)?$ /artifactory/webapp/ redirect;
-
-    location /artifactory/ {
-        proxy_read_timeout  900;
-        proxy_pass_header   Server;
-        proxy_cookie_path ~*^/.* /;
-        proxy_pass         http://artifactory/artifactory/;
-        proxy_set_header   X-Artifactory-Override-Base-Url $http_x_forwarded_proto://$host:$server_port/artifactory;
-        proxy_set_header    X-Forwarded-Port  $server_port;
-        proxy_set_header    X-Forwarded-Proto $http_x_forwarded_proto;
-        proxy_set_header    Host              $http_host;
-        proxy_set_header    X-Forwarded-For   $proxy_add_x_forwarded_for;
-    }
-}
+listen stats 
+	bind *:8080
+	stats enable
+	stats refresh 30s
+	stats uri /haproxy?stats
+	stats realm HAProxy\ Statistics
+	stats auth admin:admin
 ```
 
 ###Artifactory生态链
