@@ -227,56 +227,58 @@ apt-get install haproxy
 
 ```bash
 global
-	log /dev/log	local0
-	log /dev/log	local1 notice
-	chroot /var/lib/haproxy
-	user haproxy
-	group haproxy
-	daemon
-	maxconn 4096
-	nbproc 1
+    log /dev/log	local0
+    log /dev/log	local1 notice
+    chroot /var/lib/haproxy
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 4096
+    nbproc 1
 
 defaults
-	log	global
-	mode	http
-	option	httplog
-	option	dontlognull
-	option  forwardfor header X-Forwarded-For
-	option  redispatch
-	retries 2
-	maxconn 40000
-	balance roundrobin
-	timeout connect 5000
-	timeout client 50000
-	timeout server 50000
-	errorfile 400 /etc/haproxy/errors/400.http
-	errorfile 403 /etc/haproxy/errors/403.http
-	errorfile 408 /etc/haproxy/errors/408.http
-	errorfile 500 /etc/haproxy/errors/500.http
-	errorfile 502 /etc/haproxy/errors/502.http
-	errorfile 503 /etc/haproxy/errors/503.http
-	errorfile 504 /etc/haproxy/errors/504.http
+    log	global
+    mode	http
+    option	httplog
+    option	dontlognull
+    option  forwardfor header X-Forwarded-For
+    option  redispatch
+    retries 2
+    maxconn 40000
+    balance roundrobin
+    timeout connect 5000
+    timeout client 50000
+    timeout server 50000
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
 
 frontend http-in
-	mode http
-	bind *:80
-	default_backend artifactory
+    mode http
+    bind *:80
+    bind *:443 ssl crt /etc/haproxy/ssl/artifactory.pem
+    reqirep ^/(v1|v2)/(.*) /artifactory/api/docker/\1/\2\3
+    default_backend artifactory
 
 backend artifactory
-	balance roundrobin
-	cookie SERVERID insert nocache indirect
-	option httpclose
-	option forwardfor header X-Forwarded-For
-	server artifactory1 <IP>:8081/artifactory weight 3 maxconn 10000 check
-	server artifactory2 <IP>:8081/artifactory weight 3 maxconn 10000 check
+    balance roundrobin
+    cookie SERVERID insert nocache indirect
+    option httpclose
+    option forwardfor header X-Forwarded-For
+    server artifactory1 <IP>:8081/artifactory maxconn 10000 check cookie
+    server artifactory2 <IP>:8081/artifactory maxconn 10000 check cookie
 
 listen stats 
-	bind *:8080
-	stats enable
-	stats refresh 30s
-	stats uri /haproxy?stats
-	stats realm HAProxy\ Statistics
-	stats auth admin:admin
+    bind *:8080
+    stats enable
+    stats refresh 30s
+    stats uri /haproxy?stats
+    stats realm HAProxy\ Statistics
+    stats auth admin:admin
 ```
 
 ####启动
@@ -360,58 +362,58 @@ cat /etc/nginx/ssl/artifactory.crt /etc/nginx/ssl/artifactory.key > /etc/nginx/s
 
 ```
 global
-	log /dev/log	local0
-	log /dev/log	local1 notice
-	chroot /var/lib/haproxy
-	user haproxy
-	group haproxy
-	daemon
-	maxconn 4096
-	nbproc 1
+    log /dev/log	local0
+    log /dev/log	local1 notice
+    chroot /var/lib/haproxy
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 4096
+    nbproc 1
 
 defaults
-	log	global
-	mode	http
-	option	httplog
-	option	dontlognull
-	option  forwardfor header X-Forwarded-For
-	option  redispatch
-	retries 2
-	maxconn 40000
-	balance roundrobin
-	timeout connect 5000
-	timeout client 50000
-	timeout server 50000
-	errorfile 400 /etc/haproxy/errors/400.http
-	errorfile 403 /etc/haproxy/errors/403.http
-	errorfile 408 /etc/haproxy/errors/408.http
-	errorfile 500 /etc/haproxy/errors/500.http
-	errorfile 502 /etc/haproxy/errors/502.http
-	errorfile 503 /etc/haproxy/errors/503.http
-	errorfile 504 /etc/haproxy/errors/504.http
+    log	global
+    mode	http
+    option	httplog
+    option	dontlognull
+    option  forwardfor header X-Forwarded-For
+    option  redispatch
+    retries 2
+    maxconn 40000
+    balance roundrobin
+    timeout connect 5000
+    timeout client 50000
+    timeout server 50000
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
 
 frontend http-in
-	mode http
-	bind *:80
-	bind *:443 ssl crt /etc/haproxy/ssl/artifactory.pem
-	reqirep ^/(v1|v2)/(.*) /artifactory/api/docker/\1/\2\3
-	default_backend artifactory
+    mode http
+    bind *:80
+    bind *:443 ssl crt /etc/haproxy/ssl/artifactory.pem
+    reqirep ^/(v1|v2)/(.*) /artifactory/api/docker/\1/\2\3
+    default_backend artifactory
 
 backend artifactory
-	balance roundrobin
-	cookie SERVERID insert nocache indirect
-	option httpclose
-	option forwardfor header X-Forwarded-For
-	server artifactory1 <IP>:8081/artifactory maxconn 10000 check cookie
-	server artifactory2 <IP>:8081/artifactory maxconn 10000 check cookie
+    balance roundrobin
+    cookie SERVERID insert nocache indirect
+    option httpclose
+    option forwardfor header X-Forwarded-For
+    server artifactory1 <IP>:8081/artifactory maxconn 10000 check cookie
+    server artifactory2 <IP>:8081/artifactory maxconn 10000 check cookie
 
 listen stats 
-	bind *:8080
-	stats enable
-	stats refresh 30s
-	stats uri /haproxy?stats
-	stats realm HAProxy\ Statistics
-	stats auth admin:admin
+    bind *:8080
+    stats enable
+    stats refresh 30s
+    stats uri /haproxy?stats
+    stats realm HAProxy\ Statistics
+    stats auth admin:admin
 ```
 
 ###Artifactory生态链
